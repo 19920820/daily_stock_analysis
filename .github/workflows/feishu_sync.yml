@@ -77,18 +77,7 @@ jobs:
             echo "缺少 token：请在仓库 Secrets 增加 WORKFLOW_DISPATCH_TOKEN（classic PAT，至少需要 repo + workflow 权限）"
             exit 1
           fi
-          payload=$(python - <<'PY'
-import json, os
-print(json.dumps({
-  "ref": os.environ.get("GITHUB_REF_NAME") or "main",
-  "inputs": {
-    "mode": "stocks-only",
-    "force_run": "false",
-    "stock_list": os.environ["STOCK_LIST"],
-  }
-}))
-PY
-)
+          payload="$(python -c 'import json,os; print(json.dumps({\"ref\": (os.environ.get(\"GITHUB_REF_NAME\") or \"main\"), \"inputs\": {\"mode\": \"stocks-only\", \"force_run\": \"false\", \"stock_list\": os.environ.get(\"STOCK_LIST\", \"\")}}))')"
 
           # 输出 API 失败原因，便于排查 401/403/404（常见：Resource not accessible by integration）
           curl -fsS --show-error \
