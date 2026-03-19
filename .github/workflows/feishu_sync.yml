@@ -49,7 +49,9 @@ jobs:
 
       - name: Trigger daily analysis workflow
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 优先使用你手动配置的 PAT（更稳，避免 GITHUB_TOKEN 权限受限导致 dispatch 失败）
+          WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           STOCK_LIST="$(cat stock_list.txt 2>/dev/null || true)"
@@ -70,6 +72,11 @@ jobs:
 
           # 触发 daily_analysis.yml（workflow_dispatch）
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/daily_analysis.yml/dispatches"
+          token="${WORKFLOW_DISPATCH_TOKEN:-${GITHUB_TOKEN_FALLBACK:-}}"
+          if [ -z "$token" ]; then
+            echo "缺少 token：请在仓库 Secrets 增加 WORKFLOW_DISPATCH_TOKEN（classic PAT，至少需要 repo + workflow 权限）"
+            exit 1
+          fi
           payload=$(python - <<'PY'
 import json, os
 print(json.dumps({
@@ -83,9 +90,10 @@ print(json.dumps({
 PY
 )
 
-          curl -fsSL \
+          # 输出 API 失败原因，便于排查 401/403/404（常见：Resource not accessible by integration）
+          curl -fsS --show-error \
             -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Authorization: Bearer ${token}" \
             "${api}" \
             -d "${payload}"
