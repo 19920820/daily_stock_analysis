@@ -58,35 +58,29 @@ jobs:
         run: |
           mkdir -p data logs reports
 
-      - name: 检查 stock_list.txt 是否 10 分钟内更新
+      - name: 检查仓库文件是否 30 分钟内更新
         id: stock_list_gate
         shell: bash
         run: |
           set -euo pipefail
-          FILE="stock_list.txt"
-          WINDOW_SECONDS=600
+          WINDOW_SECONDS=1800
           NOW_EPOCH="$(date +%s)"
 
           SHOULD_RUN="true"
           REASON="ok"
 
-          if [ ! -f "$FILE" ]; then
+          LAST_COMMIT_EPOCH="$(git log -1 --format=%ct -- . 2>/dev/null || true)"
+          if [ -z "$LAST_COMMIT_EPOCH" ]; then
             SHOULD_RUN="true"
-            REASON="file_missing_run_anyway"
+            REASON="no_git_history_run_anyway"
           else
-            LAST_COMMIT_EPOCH="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
-            if [ -z "$LAST_COMMIT_EPOCH" ]; then
+            AGE_SECONDS="$((NOW_EPOCH - LAST_COMMIT_EPOCH))"
+            if [ "$AGE_SECONDS" -le "$WINDOW_SECONDS" ]; then
               SHOULD_RUN="true"
-              REASON="no_git_history_run_anyway"
+              REASON="updated_recently_age_seconds=${AGE_SECONDS}"
             else
-              AGE_SECONDS="$((NOW_EPOCH - LAST_COMMIT_EPOCH))"
-              if [ "$AGE_SECONDS" -le "$WINDOW_SECONDS" ]; then
-                SHOULD_RUN="true"
-                REASON="updated_recently_age_seconds=${AGE_SECONDS}"
-              else
-                SHOULD_RUN="false"
-                REASON="not_updated_recently_age_seconds=${AGE_SECONDS}"
-              fi
+              SHOULD_RUN="false"
+              REASON="not_updated_recently_age_seconds=${AGE_SECONDS}"
             fi
           fi
 
@@ -96,7 +90,7 @@ jobs:
           if [ "$SHOULD_RUN" = "true" ]; then
             echo "✅ 继续执行分析：${REASON}"
           else
-            echo "⏭️ 跳过分析：stock_list.txt 10 分钟内无改动（${REASON}）"
+            echo "⏭️ 跳过分析：最近 30 分钟内无代码提交改动（${REASON}）"
           fi
       
       - name: 执行股票分析
