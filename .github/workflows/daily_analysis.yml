@@ -1,10 +1,6 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每 15 分钟一次
-  schedule:
-    - cron: '*/15 * * * *'
-  
   # 手动触发
   workflow_dispatch:
     inputs:
@@ -43,6 +39,33 @@ jobs:
         with:
           fetch-depth: 50
 
+      - name: 从 stock_list.txt 加载自选股
+        id: stock_list_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="stock_list.txt"
+          STOCK_LIST_VALUE=""
+
+          if [ -f "$FILE" ]; then
+            STOCK_LIST_VALUE="$(
+              sed 's/\r$//' "$FILE" \
+              | sed 's/#.*$//' \
+              | tr ',[:space:]' '\n' \
+              | sed '/^$/d' \
+              | awk '{print toupper($0)}' \
+              | paste -sd, -
+            )"
+          fi
+
+          if [ -n "$STOCK_LIST_VALUE" ]; then
+            echo "stock_list=${STOCK_LIST_VALUE}" >> "$GITHUB_OUTPUT"
+            echo "✅ 已从 stock_list.txt 加载自选股: ${STOCK_LIST_VALUE}"
+          else
+            echo "stock_list=600519" >> "$GITHUB_OUTPUT"
+            echo "⚠️ stock_list.txt 不存在或为空，使用默认值: 600519"
+          fi
+
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
         with:
@@ -58,43 +81,7 @@ jobs:
         run: |
           mkdir -p data logs reports
 
-      - name: 检查仓库文件是否 30 分钟内更新
-        id: stock_list_gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          WINDOW_SECONDS=1800
-          NOW_EPOCH="$(date +%s)"
-
-          SHOULD_RUN="true"
-          REASON="ok"
-
-          LAST_COMMIT_EPOCH="$(git log -1 --format=%ct -- . 2>/dev/null || true)"
-          if [ -z "$LAST_COMMIT_EPOCH" ]; then
-            SHOULD_RUN="true"
-            REASON="no_git_history_run_anyway"
-          else
-            AGE_SECONDS="$((NOW_EPOCH - LAST_COMMIT_EPOCH))"
-            if [ "$AGE_SECONDS" -le "$WINDOW_SECONDS" ]; then
-              SHOULD_RUN="true"
-              REASON="updated_recently_age_seconds=${AGE_SECONDS}"
-            else
-              SHOULD_RUN="false"
-              REASON="not_updated_recently_age_seconds=${AGE_SECONDS}"
-            fi
-          fi
-
-          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
-          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
-
-          if [ "$SHOULD_RUN" = "true" ]; then
-            echo "✅ 继续执行分析：${REASON}"
-          else
-            echo "⏭️ 跳过分析：最近 30 分钟内无代码提交改动（${REASON}）"
-          fi
-      
       - name: 执行股票分析
-        if: steps.stock_list_gate.outputs.should_run == 'true'
         env:
           # ==========================================
           # AI 配置
@@ -191,7 +178,7 @@ jobs:
           # ==========================================
           # 自选股配置
           # ==========================================
-          STOCK_LIST: ${{ secrets.STOCK_LIST || '600519' }}
+          STOCK_LIST: ${{ steps.stock_list_source.outputs.stock_list }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           
           # ==========================================
@@ -283,7 +270,7 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
+        if: always()
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
@@ -292,7 +279,7 @@ jobs:
           retention-days: 30
       
       - name: 显示运行结果
-        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
+        if: always()
         run: |
           echo ""
           echo "=========================================="
