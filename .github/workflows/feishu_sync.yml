@@ -1,24 +1,21 @@
 name: Feishu Sync
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 每 10 分钟跑一次
-  workflow_dispatch:        # 支持手动点击运行
+    - cron: '*/10 * * * *'  # 每 10 分钟自动同步一次
+  workflow_dispatch:        # 支持手动点击按钮同步
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # push stock_list.txt
-      actions: write    # dispatch daily_analysis
-    # 按照官方建议，强制开启 Node.js 24 运行环境
+      contents: write   # 必须开启，否则无法把更新后的 stock_list.txt 推送到仓库
+    
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       
     steps:
-      # 1. 升级到 v4，支持更高版本的 Node.js
       - uses: actions/checkout@v4 
       
-      # 2. 升级到 v5，适配 Node.js 24
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -36,53 +33,20 @@ jobs:
           
       - name: Commit and Push
         run: |
+          # 配置机器人身份
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 核心修复：如果文件不存在，先创建一个空的，防止 git add 报错
+          # 确保文件存在，避免 add 报错
           touch stock_list.txt
           
           git add stock_list.txt
           
-          # 增加判断，只有在内容真的发生变化时才提交
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Feishu auto update" && git push)
-
-      - name: Trigger daily analysis workflow
-        env:
-          # 优先使用你手动配置的 PAT（更稳，避免 GITHUB_TOKEN 权限受限导致 dispatch 失败）
-          WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
-          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          STOCK_LIST="$(cat stock_list.txt 2>/dev/null || true)"
-          STOCK_LIST="${STOCK_LIST//[[:space:]]/}"
-          if [ -z "$STOCK_LIST" ]; then
-            echo "stock_list.txt 为空，跳过触发 daily_analysis"
-            exit 0
+          # 只有当飞书里的内容确实发生了变化时，才进行提交和推送
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "没有发现新股票，无需更新。"
+          else
+            git commit -m "Feishu auto update"
+            git push
+            echo "✅ 股票列表已成功更新至仓库。"
           fi
-          export STOCK_LIST
-
-          # 仅当本次确实发生了变更（有 commit）才触发，避免每 10 分钟无意义拉起分析
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "$(git log -1 --pretty=%B 2>/dev/null || true)" != "Feishu auto update" ]; then
-              echo "本次没有产生飞书同步提交，跳过触发 daily_analysis"
-              exit 0
-            fi
-          fi
-
-          # 触发 daily_analysis.yml（workflow_dispatch）
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/daily_analysis.yml/dispatches"
-          token="${WORKFLOW_DISPATCH_TOKEN:-${GITHUB_TOKEN_FALLBACK:-}}"
-          if [ -z "$token" ]; then
-            echo "缺少 token：请在仓库 Secrets 增加 WORKFLOW_DISPATCH_TOKEN（classic PAT，至少需要 repo + workflow 权限）"
-            exit 1
-          fi
-          payload="$(python -c 'import json,os; print(json.dumps({\"ref\": (os.environ.get(\"GITHUB_REF_NAME\") or \"main\"), \"inputs\": {\"mode\": \"stocks-only\", \"force_run\": \"false\", \"stock_list\": os.environ.get(\"STOCK_LIST\", \"\")}}))')"
-
-          # 输出 API 失败原因，便于排查 401/403/404（常见：Resource not accessible by integration）
-          curl -fsS --show-error \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${token}" \
-            "${api}" \
-            -d "${payload}"
