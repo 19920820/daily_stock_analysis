@@ -8,6 +8,11 @@ on:
   # 手动触发
   workflow_dispatch:
     inputs:
+      stock_list:
+        description: '自选股列表（逗号分隔；留空则使用仓库 Variables/Secrets 的 STOCK_LIST）'
+        required: false
+        default: ''
+        type: string
       mode:
         description: '运行模式'
         required: true
@@ -153,7 +158,7 @@ jobs:
           # ==========================================
           # 自选股配置
           # ==========================================
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
+          STOCK_LIST: ${{ github.event.inputs.stock_list || vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           
           # ==========================================
