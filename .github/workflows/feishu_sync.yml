@@ -7,6 +7,9 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push stock_list.txt
+      actions: write    # dispatch daily_analysis
     # 按照官方建议，强制开启 Node.js 24 运行环境
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -43,3 +46,46 @@ jobs:
           
           # 增加判断，只有在内容真的发生变化时才提交
           git diff --quiet && git diff --staged --quiet || (git commit -m "Feishu auto update" && git push)
+
+      - name: Trigger daily analysis workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STOCK_LIST="$(cat stock_list.txt 2>/dev/null || true)"
+          STOCK_LIST="${STOCK_LIST//[[:space:]]/}"
+          if [ -z "$STOCK_LIST" ]; then
+            echo "stock_list.txt 为空，跳过触发 daily_analysis"
+            exit 0
+          fi
+          export STOCK_LIST
+
+          # 仅当本次确实发生了变更（有 commit）才触发，避免每 10 分钟无意义拉起分析
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "$(git log -1 --pretty=%B 2>/dev/null || true)" != "Feishu auto update" ]; then
+              echo "本次没有产生飞书同步提交，跳过触发 daily_analysis"
+              exit 0
+            fi
+          fi
+
+          # 触发 daily_analysis.yml（workflow_dispatch）
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/daily_analysis.yml/dispatches"
+          payload=$(python - <<'PY'
+import json, os
+print(json.dumps({
+  "ref": os.environ.get("GITHUB_REF_NAME") or "main",
+  "inputs": {
+    "mode": "stocks-only",
+    "force_run": "false",
+    "stock_list": os.environ["STOCK_LIST"],
+  }
+}))
+PY
+)
+
+          curl -fsSL \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "${api}" \
+            -d "${payload}"
