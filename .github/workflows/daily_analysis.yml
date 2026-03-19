@@ -1,10 +1,8 @@
 name: 每日股票分析
 
 on:
-  # 1. 设置为每 15 分钟运行一次 (UTC 格式)
   schedule:
-    - cron: '*/15 * * * *'
-  
+    - cron: '*/15 * * * *'  # 每 15 分钟运行一次
   workflow_dispatch:
     inputs:
       force_run:
@@ -22,66 +20,56 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # 必须获取最近两次提交以对比时间
+          fetch-depth: 2
 
-      # 核心逻辑：检查 stock_list.txt 是否在近期被更新过
       - name: 检查文件更新时间
         id: check_update
         run: |
-          # 如果是手动点击按钮触发，直接通过
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "skip_check=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          # 获取 stock_list.txt 最后一次提交的时间戳
           LAST_COMMIT_TIME=$(git log -1 --format=%ct -- stock_list.txt || echo 0)
           CURRENT_TIME=$(date +%s)
           DIFF=$((CURRENT_TIME - LAST_COMMIT_TIME))
-          
-          echo "文件最后更新于 $DIFF 秒前"
-          
-          # 判断逻辑：如果是 15 分钟跑一次，判定 10 分钟（600秒）内的更新比较稳妥
+          # 15分钟轮询，判定10分钟内更新
           if [ $DIFF -le 600 ]; then
-            echo "✅ 发现近期有飞书同步更新，准备开始分析。"
-            echo "skip_check=false" >> $GITHUB_OUTPUT
+            echo "✅ 发现近期更新，开始分析。"
           else
-            echo "😴 文件在近期未变动，为了节省额度，取消本次分析。"
-            # 使用 exit 1 会显示红叉，如果你希望显示绿勾但跳过后续，可以使用下面逻辑
-            exit 0 
+            echo "😴 无更新，跳过。"
+            exit 0
           fi
 
       - name: 设置 Python
-        if: success()
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: 安装依赖
-        if: success()
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      # 核心逻辑：直接从 stock_list.txt 读取股票代码
-      - name: 执行股票分析
-        if: success()
+      - name: 执行股票分析并推送
         env:
+          # === 核心：AI 密钥 ===
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          # 1. 读取文件内容并去掉所有空格/换行
-          STOCKS=$(cat stock_list.txt | tr -d '[:space:]')
           
+          # === 核心：飞书推送配置 (必须加上这两行) ===
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          # 如果你使用的是飞书应用机器人模式，还需要下面两行
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+
+          # === 其他必要配置 ===
+          REPORT_TYPE: 'simple'
+          SINGLE_STOCK_NOTIFY: 'true'
+          TRADING_DAY_CHECK_ENABLED: 'false' # 既然是你手动/定时触发，建议关掉交易日检查
+        run: |
+          # 读取股票列表
+          STOCKS=$(cat stock_list.txt | tr -d '[:space:]')
           if [ -z "$STOCKS" ]; then
-            echo "❌ 错误：stock_list.txt 为空，无法进行分析。"
+            echo "❌ stock_list.txt 为空"
             exit 1
           fi
-          
-          echo "🚀 正在为以下股票执行分析: $STOCKS"
-          
-          # 2. 将读取到的股票列表注入环境变量供 main.py 使用
           export STOCK_LIST="$STOCKS"
           
-          # 3. 运行分析脚本
-          # --no-market-review: 仅分析个股
-          # --force-run: 跳过交易日检查（因为是你手动/定时触发的）
+          # 执行分析（main.py 会自动读取环境变量中的 FEISHU_WEBHOOK_URL 并推送）
           python main.py --no-market-review --force-run
