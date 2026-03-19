@@ -1,0 +1,31 @@
+name: Feishu Sync
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 每 10 分钟跑一次
+  workflow_dispatch:        # 支持手动点击运行
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run sync
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_APP_TOKEN: ${{ secrets.FEISHU_APP_TOKEN }}
+          FEISHU_TABLE_ID: ${{ secrets.FEISHU_TABLE_ID }}
+        run: |
+          pip install requests
+          python sync_stock.py
+      - name: Commit and Push
+        run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@github.com"
+          git add stock_list.txt
+          git commit -m "Feishu auto update" || echo "No changes"
+          git push
