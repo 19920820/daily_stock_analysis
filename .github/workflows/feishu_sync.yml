@@ -8,14 +8,17 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # 用于 push stock_list.txt
-      actions: write    # 用于触发 daily_analysis
+      contents: write   # push stock_list.txt
+      actions: write    # dispatch daily_analysis
+    # 按照官方建议，强制开启 Node.js 24 运行环境
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       
     steps:
+      # 1. 升级到 v4，支持更高版本的 Node.js
       - uses: actions/checkout@v4 
       
+      # 2. 升级到 v5，适配 Node.js 24
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,43 +35,54 @@ jobs:
           python sync_stock.py
           
       - name: Commit and Push
-        id: git_push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 核心修复：如果文件不存在，先创建一个空的，防止 git add 报错
           touch stock_list.txt
+          
           git add stock_list.txt
-          # 检查是否有变动，并设置一个 output 变量供下一步判断
-          if git diff --quiet && git diff --staged --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            git commit -m "Feishu auto update"
-            git push
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
+          
+          # 增加判断，只有在内容真的发生变化时才提交
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Feishu auto update" && git push)
 
       - name: Trigger daily analysis workflow
-        # 只有当文件真的发生变化，或者是手动点击运行时，才触发分析
-        if: steps.git_push.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+          # 优先使用你手动配置的 PAT（更稳，避免 GITHUB_TOKEN 权限受限导致 dispatch 失败）
+          WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. 准备数据
-          STOCK_LIST=$(cat stock_list.txt | tr -d '[:space:]')
+          set -euo pipefail
+          STOCK_LIST="$(cat stock_list.txt 2>/dev/null || true)"
+          STOCK_LIST="${STOCK_LIST//[[:space:]]/}"
           if [ -z "$STOCK_LIST" ]; then
-            echo "⚠️ stock_list.txt 为空，跳过触发"
+            echo "stock_list.txt 为空，跳过触发 daily_analysis"
             exit 0
           fi
+          export STOCK_LIST
 
-          # 2. 构建 JSON Payload (修复了之前的转义语法错误)
-          # 使用单引号包裹 python 命令，避免内部双引号冲突
-          PAYLOAD=$(python3 -c 'import json, os; print(json.dumps({"ref": "main", "inputs": {"mode": "stocks-only", "force_run": "false", "stock_list": os.environ["STOCKS"]}}))' env STOCKS="$STOCK_LIST")
+          # 仅当本次确实发生了变更（有 commit）才触发，避免每 10 分钟无意义拉起分析
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "$(git log -1 --pretty=%B 2>/dev/null || true)" != "Feishu auto update" ]; then
+              echo "本次没有产生飞书同步提交，跳过触发 daily_analysis"
+              exit 0
+            fi
+          fi
 
-          # 3. 发送请求 (请确保你的分析文件确实叫 daily_analysis.yml)
-          curl -X POST \
+          # 触发 daily_analysis.yml（workflow_dispatch）
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/daily_analysis.yml/dispatches"
+          token="${WORKFLOW_DISPATCH_TOKEN:-${GITHUB_TOKEN_FALLBACK:-}}"
+          if [ -z "$token" ]; then
+            echo "缺少 token：请在仓库 Secrets 增加 WORKFLOW_DISPATCH_TOKEN（classic PAT，至少需要 repo + workflow 权限）"
+            exit 1
+          fi
+          payload="$(python -c 'import json,os; print(json.dumps({\"ref\": (os.environ.get(\"GITHUB_REF_NAME\") or \"main\"), \"inputs\": {\"mode\": \"stocks-only\", \"force_run\": \"false\", \"stock_list\": os.environ.get(\"STOCK_LIST\", \"\")}}))')"
+
+          # 输出 API 失败原因，便于排查 401/403/404（常见：Resource not accessible by integration）
+          curl -fsS --show-error \
+            -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/daily_analysis.yml/dispatches" \
-            -d "$PAYLOAD"
-          
-          echo "✅ 已成功发送触发指令给 daily_analysis.yml"
+            -H "Authorization: Bearer ${token}" \
+            "${api}" \
+            -d "${payload}"
