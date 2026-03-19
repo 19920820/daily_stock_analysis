@@ -42,6 +42,33 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 50
+
+      - name: 从 stock_list.txt 加载自选股
+        id: stock_list_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="stock_list.txt"
+          STOCK_LIST_VALUE=""
+
+          if [ -f "$FILE" ]; then
+            STOCK_LIST_VALUE="$(
+              sed 's/\r$//' "$FILE" \
+              | sed 's/#.*$//' \
+              | tr ',[:space:]' '\n' \
+              | sed '/^$/d' \
+              | awk '{print toupper($0)}' \
+              | paste -sd, -
+            )"
+          fi
+
+          if [ -n "$STOCK_LIST_VALUE" ]; then
+            echo "stock_list=${STOCK_LIST_VALUE}" >> "$GITHUB_OUTPUT"
+            echo "✅ 已从 stock_list.txt 加载自选股: ${STOCK_LIST_VALUE}"
+          else
+            echo "stock_list=" >> "$GITHUB_OUTPUT"
+            echo "⚠️ stock_list.txt 不存在或为空，将回退到 vars/secrets 的 STOCK_LIST"
+          fi
       
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
@@ -191,7 +218,7 @@ jobs:
           # ==========================================
           # 自选股配置
           # ==========================================
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
+          STOCK_LIST: ${{ steps.stock_list_source.outputs.stock_list || vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           
           # ==========================================
