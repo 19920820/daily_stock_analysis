@@ -1,9 +1,9 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
+  # 定时触发 - 每 15 分钟一次
   schedule:
-    - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
+    - cron: '*/15 * * * *'
   
   # 手动触发
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       mode:
         description: '运行模式'
         required: true
-        default: 'full'
+        default: 'stocks-only'
         type: choice
         options:
           - full          # 完整分析（股票+大盘）
@@ -40,6 +40,8 @@ jobs:
       
       - name: 检出代码
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 50
       
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
@@ -55,8 +57,50 @@ jobs:
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports
+
+      - name: 检查 stock_list.txt 是否 10 分钟内更新
+        id: stock_list_gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="stock_list.txt"
+          WINDOW_SECONDS=600
+          NOW_EPOCH="$(date +%s)"
+
+          SHOULD_RUN="true"
+          REASON="ok"
+
+          if [ ! -f "$FILE" ]; then
+            SHOULD_RUN="true"
+            REASON="file_missing_run_anyway"
+          else
+            LAST_COMMIT_EPOCH="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
+            if [ -z "$LAST_COMMIT_EPOCH" ]; then
+              SHOULD_RUN="true"
+              REASON="no_git_history_run_anyway"
+            else
+              AGE_SECONDS="$((NOW_EPOCH - LAST_COMMIT_EPOCH))"
+              if [ "$AGE_SECONDS" -le "$WINDOW_SECONDS" ]; then
+                SHOULD_RUN="true"
+                REASON="updated_recently_age_seconds=${AGE_SECONDS}"
+              else
+                SHOULD_RUN="false"
+                REASON="not_updated_recently_age_seconds=${AGE_SECONDS}"
+              fi
+            fi
+          fi
+
+          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+
+          if [ "$SHOULD_RUN" = "true" ]; then
+            echo "✅ 继续执行分析：${REASON}"
+          else
+            echo "⏭️ 跳过分析：stock_list.txt 10 分钟内无改动（${REASON}）"
+          fi
       
       - name: 执行股票分析
+        if: steps.stock_list_gate.outputs.should_run == 'true'
         env:
           # ==========================================
           # AI 配置
@@ -189,7 +233,7 @@ jobs:
           fi
 
           # 判断运行模式
-          MODE="${{ github.event.inputs.mode || 'full' }}"
+          MODE="${{ github.event.inputs.mode || 'stocks-only' }}"
           
           echo "=========================================="
           echo "🚀 A股自选股智能分析系统"
@@ -245,7 +289,7 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always()
+        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
@@ -254,7 +298,7 @@ jobs:
           retention-days: 30
       
       - name: 显示运行结果
-        if: always()
+        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
         run: |
           echo ""
           echo "=========================================="
