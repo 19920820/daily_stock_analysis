@@ -13,6 +13,12 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+      # 兼容旧版 API/集成仍会传入该字段；Workflow 已固定 TRADING_DAY_CHECK_ENABLED=false，此值不生效
+      force_run:
+        description: 'Deprecated (ignored). Kept for API clients that still send this input.'
+        required: false
+        default: false
+        type: boolean
 
 # 并发控制：同一时间只运行一个分析任务
 concurrency:

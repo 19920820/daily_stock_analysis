@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- GitHub Actions「每日股票分析」Workflow（`daily_analysis.yml`）固定 `TRADING_DAY_CHECK_ENABLED=false`，移除 `workflow_dispatch.force_run`；不再在 Actions 内依据交易日历跳过执行
+- GitHub Actions「每日股票分析」Workflow（`daily_analysis.yml`）固定 `TRADING_DAY_CHECK_ENABLED=false`，不再在 Actions 内依据交易日历跳过执行；保留可选输入 `force_run`（已废弃、忽略）以兼容仍会传入该字段的 API 客户端
 
 ## [3.6.0] - 2026-03-14
 

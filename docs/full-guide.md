@@ -436,7 +436,7 @@ schedule:
 
 #### GitHub Actions 与交易日检查
 
-`daily_analysis.yml` 在 Workflow 环境变量中**固定**设置 `TRADING_DAY_CHECK_ENABLED=false`，定时与手动触发均**不**做非交易日跳过；无需在 Secrets/Variables 中再配置该项，也不提供 `force_run` 输入。
+`daily_analysis.yml` 在 Workflow 环境变量中**固定**设置 `TRADING_DAY_CHECK_ENABLED=false`，定时与手动触发均**不**做非交易日跳过；无需在 Secrets/Variables 中再配置该项。若 API 仍传入 `workflow_dispatch` 的 `force_run`，该字段会被接受但**忽略**（仅为兼容旧客户端）。
 
 手动触发步骤：
 
