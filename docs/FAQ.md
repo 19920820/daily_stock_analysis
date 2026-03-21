@@ -289,22 +289,17 @@ python main.py --market-only
 
 ---
 
-### Q17: 为什么周末在 GitHub Actions 手动触发仍显示“非交易日跳过”？
+### Q17: 为什么在 GitHub Actions 仍看到“非交易日跳过”，或本地如何关闭检查？
 
-**现象**：已经配置了 `TRADING_DAY_CHECK_ENABLED` 或希望手动运行，但日志仍提示“今日所有相关市场均为非交易日，跳过执行”。
+**GitHub Actions**：`daily_analysis.yml` 已固定 `TRADING_DAY_CHECK_ENABLED=false`，正常不应再出现因交易日历而跳过。若仍看到该提示，请确认运行的是本仓库的「每日股票分析」Workflow，且日志中的环境未覆盖该变量。
 
-**解决方案**：
-1. 打开 `Actions → 每日股票分析 → Run workflow`
-2. 手动触发时将 `force_run` 设为 `true`（单次强制运行）
-3. 如果希望长期关闭交易日检查，在 `Settings → Secrets and variables → Actions` 中设置：
-   ```bash
-   TRADING_DAY_CHECK_ENABLED=false
-   ```
+**本地 / Docker**：默认启用交易日检查。若需强制执行，可任选其一：
 
-**规则说明**：
-- `TRADING_DAY_CHECK_ENABLED=true` 且 `force_run=false`：非交易日跳过（默认）
-- `force_run=true`：本次即使非交易日也执行
-- `TRADING_DAY_CHECK_ENABLED=false`：定时和手动都不做交易日检查
+```bash
+TRADING_DAY_CHECK_ENABLED=false python main.py
+# 或
+python main.py --force-run
+```
 
 ---
 
