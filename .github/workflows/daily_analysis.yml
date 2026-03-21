@@ -188,7 +188,8 @@ jobs:
           SINGLE_STOCK_NOTIFY: ${{ vars.SINGLE_STOCK_NOTIFY || secrets.SINGLE_STOCK_NOTIFY || 'false' }}
           MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
           ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
-          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
+          # 本地默认仍为 true；CI 未设置 Repository variable 时默认 false，休市日仍可跑股票分析
+          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'false' }}
           
           # ==========================================
           # 系统配置
@@ -223,6 +224,7 @@ jobs:
           echo "🎯 运行模式: $MODE"
           echo "📊 自选股: $STOCK_LIST"
           echo "📝 报告类型: $REPORT_TYPE"
+          echo "📅 交易日检查: $( [ "${TRADING_DAY_CHECK_ENABLED}" = "false" ] && echo '关闭（非交易日也会执行）' || echo '开启（非交易日可能跳过）' )"
           echo ""
           echo "=========================================="
           echo "📋 配置检查"

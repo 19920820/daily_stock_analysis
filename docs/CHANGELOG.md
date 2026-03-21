@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- ⚙️ **GitHub Actions `daily_analysis.yml`** — 未设置 `TRADING_DAY_CHECK_ENABLED` 时默认 `false`，云端任务在休市日仍可执行股票分析；若需在 CI 中启用交易日检查，请在 Repository Variables 中设为 `true`
+
 ## [3.6.0] - 2026-03-14
 
 ### Added
