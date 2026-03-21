@@ -1,13 +1,6 @@
 name: 每日股票分析
 
 on:
-<<<<<<< Updated upstream
-=======
-  # 定时触发 - 每 15 分钟一次
-  schedule:
-    - cron: '*/15 * * * *'
-  
->>>>>>> Stashed changes
   # 手动触发
   workflow_dispatch:
     inputs:
@@ -45,7 +38,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 50
-<<<<<<< Updated upstream
 
       - name: 从 stock_list.txt 加载自选股
         id: stock_list_source
@@ -74,9 +66,6 @@ jobs:
             echo "⚠️ stock_list.txt 不存在或为空，使用默认值: 600519"
           fi
 
-=======
-      
->>>>>>> Stashed changes
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
         with:
@@ -92,52 +81,7 @@ jobs:
         run: |
           mkdir -p data logs reports
 
-<<<<<<< Updated upstream
-=======
-      - name: 检查 stock_list.txt 是否 10 分钟内更新
-        id: stock_list_gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          FILE="stock_list.txt"
-          WINDOW_SECONDS=600
-          NOW_EPOCH="$(date +%s)"
-
-          SHOULD_RUN="true"
-          REASON="ok"
-
-          if [ ! -f "$FILE" ]; then
-            SHOULD_RUN="true"
-            REASON="file_missing_run_anyway"
-          else
-            LAST_COMMIT_EPOCH="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
-            if [ -z "$LAST_COMMIT_EPOCH" ]; then
-              SHOULD_RUN="true"
-              REASON="no_git_history_run_anyway"
-            else
-              AGE_SECONDS="$((NOW_EPOCH - LAST_COMMIT_EPOCH))"
-              if [ "$AGE_SECONDS" -le "$WINDOW_SECONDS" ]; then
-                SHOULD_RUN="true"
-                REASON="updated_recently_age_seconds=${AGE_SECONDS}"
-              else
-                SHOULD_RUN="false"
-                REASON="not_updated_recently_age_seconds=${AGE_SECONDS}"
-              fi
-            fi
-          fi
-
-          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
-          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
-
-          if [ "$SHOULD_RUN" = "true" ]; then
-            echo "✅ 继续执行分析：${REASON}"
-          else
-            echo "⏭️ 跳过分析：stock_list.txt 10 分钟内无改动（${REASON}）"
-          fi
-      
->>>>>>> Stashed changes
       - name: 执行股票分析
-        if: steps.stock_list_gate.outputs.should_run == 'true'
         env:
           # ==========================================
           # AI 配置
@@ -244,8 +188,7 @@ jobs:
           SINGLE_STOCK_NOTIFY: ${{ vars.SINGLE_STOCK_NOTIFY || secrets.SINGLE_STOCK_NOTIFY || 'false' }}
           MARKET_REVIEW_ENABLED: ${{ vars.MARKET_REVIEW_ENABLED || secrets.MARKET_REVIEW_ENABLED || 'true' }}
           ANALYSIS_DELAY: ${{ vars.ANALYSIS_DELAY || secrets.ANALYSIS_DELAY || '0' }}
-          # 本地默认仍为 true；CI 未设置 Repository variable 时默认 false，休市日仍可跑股票分析
-          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'false' }}
+          TRADING_DAY_CHECK_ENABLED: ${{ vars.TRADING_DAY_CHECK_ENABLED || secrets.TRADING_DAY_CHECK_ENABLED || 'true' }}
           
           # ==========================================
           # 系统配置
@@ -280,7 +223,6 @@ jobs:
           echo "🎯 运行模式: $MODE"
           echo "📊 自选股: $STOCK_LIST"
           echo "📝 报告类型: $REPORT_TYPE"
-          echo "📅 交易日检查: $( [ "${TRADING_DAY_CHECK_ENABLED}" = "false" ] && echo '关闭（非交易日也会执行）' || echo '开启（非交易日可能跳过）' )"
           echo ""
           echo "=========================================="
           echo "📋 配置检查"
@@ -328,7 +270,7 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
+        if: always()
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
@@ -337,7 +279,7 @@ jobs:
           retention-days: 30
       
       - name: 显示运行结果
-        if: always() && steps.stock_list_gate.outputs.should_run == 'true'
+        if: always()
         run: |
           echo ""
           echo "=========================================="
