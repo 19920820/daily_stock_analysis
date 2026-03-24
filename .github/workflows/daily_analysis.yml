@@ -75,8 +75,8 @@ jobs:
       
       - name: 安装依赖
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --index-url https://pypi.org/simple -r requirements.txt
       
       - name: 创建必要目录
         run: |
