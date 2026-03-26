@@ -1,7 +1,8 @@
 name: Feishu Sync
 on:
   schedule:
-    - cron: '*/5 * * * *'  # 每 5 分钟自动同步一次
+    # 每 5 分钟自动同步一次（UTC），避开北京时间 02:00–06:00（UTC 18:00–22:00）
+    - cron: '*/5 0-17,23 * * *'
   workflow_dispatch:        # 支持手动点击按钮同步
 
 jobs:
@@ -15,13 +16,35 @@ jobs:
       
     steps:
       - uses: actions/checkout@v4 
+
+      - name: Quiet hours gate (BJ 02:00–06:00)
+        id: quiet_hours
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 手动触发始终运行；定时触发在北京时间 02:00–06:00 跳过
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bj_hour="$(TZ='Asia/Shanghai' date +%H)"
+          if [ "${bj_hour}" -ge 2 ] && [ "${bj_hour}" -lt 6 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 定时触发：当前北京时间 ${bj_hour}:xx（02:00–06:00），跳过本次同步"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       
       - name: Set up Python
         uses: actions/setup-python@v5
+        if: ${{ steps.quiet_hours.outputs.run == 'true' }}
         with:
           python-version: '3.10'
           
       - name: Run sync
+        if: ${{ steps.quiet_hours.outputs.run == 'true' }}
         env:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
@@ -32,6 +55,7 @@ jobs:
           python sync_stock.py
           
       - name: Commit and Push
+        if: ${{ steps.quiet_hours.outputs.run == 'true' }}
         run: |
           # 配置机器人身份
           git config --global user.name "github-actions[bot]"
@@ -50,3 +74,8 @@ jobs:
             git push
             echo "✅ 股票列表已成功更新至仓库。"
           fi
+
+      - name: Skipped by quiet hours
+        if: ${{ steps.quiet_hours.outputs.run != 'true' }}
+        run: |
+          echo "已跳过：北京时间 02:00–06:00 不自动同步"
