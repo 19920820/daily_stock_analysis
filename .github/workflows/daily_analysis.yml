@@ -19,6 +19,10 @@ on:
         required: false
         default: false
         type: boolean
+  # 定时触发：每 2 小时执行一次（UTC）
+  schedule:
+    # 避开北京时间 02:00–06:00（UTC 18:00–22:00）
+    - cron: '0 0,2,4,6,8,10,12,14,16 * * *'
 
 # 并发控制：同一时间只运行一个分析任务
 concurrency:
@@ -40,8 +44,60 @@ jobs:
         with:
           fetch-depth: 50
 
+      - name: 判断 stock_list.txt 是否在 2 小时内更新
+        id: should_run
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 手动触发始终运行；定时触发则仅在 stock_list.txt 最近 2 小时内有提交更新时运行
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=workflow_dispatch" >> "$GITHUB_OUTPUT"
+            echo "✅ 手动触发：跳过更新判断，直接运行"
+            exit 0
+          fi
+
+          # 定时触发：北京时间 02:00–06:00 不自动运行
+          bj_hour="$(TZ='Asia/Shanghai' date +%H)"
+          if [ "${bj_hour}" -ge 2 ] && [ "${bj_hour}" -lt 6 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=quiet_hours_bj_02_06" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 定时触发：当前北京时间 ${bj_hour}:xx（02:00–06:00），跳过本次分析"
+            exit 0
+          fi
+
+          FILE="stock_list.txt"
+          if [ ! -f "$FILE" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=file_missing" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 定时触发：未找到 ${FILE}，跳过本次分析"
+            exit 0
+          fi
+
+          last_commit_epoch="$(git log -1 --format=%ct -- "$FILE" 2>/dev/null || true)"
+          if [ -z "${last_commit_epoch}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no_commit_info" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 定时触发：无法获取 ${FILE} 的最近提交信息，跳过本次分析"
+            exit 0
+          fi
+
+          now_epoch="$(date +%s)"
+          age_seconds="$(( now_epoch - last_commit_epoch ))"
+          if [ "${age_seconds}" -le 7200 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=updated_within_2h" >> "$GITHUB_OUTPUT"
+            echo "✅ 定时触发：${FILE} 最近 ${age_seconds}s 内有更新，开始运行分析"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=not_updated_within_2h" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 定时触发：${FILE} 距离最近更新 ${age_seconds}s（> 7200s），跳过本次分析"
+          fi
+
       - name: 从 stock_list.txt 加载自选股
         id: stock_list_source
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,11 +125,13 @@ jobs:
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         with:
           python-version: '3.12'
           cache: 'pip'
       
       - name: 安装依赖
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         run: |
           "$pythonLocation/bin/python" --version
           "$pythonLocation/bin/python" -m pip --version
@@ -81,10 +139,12 @@ jobs:
           "$pythonLocation/bin/python" -m pip install --index-url https://pypi.org/simple -r requirements.txt
       
       - name: 创建必要目录
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         run: |
           mkdir -p data logs reports
 
       - name: 执行股票分析
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         env:
           # ==========================================
           # AI 配置
@@ -127,6 +187,7 @@ jobs:
           MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
           BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
           SEARXNG_BASE_URLS: ${{ secrets.SEARXNG_BASE_URLS }}
+          SEARXNG_PUBLIC_INSTANCES_ENABLED: ${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED }}
           
           # ==========================================
           # 通知渠道（可同时配置多个，全部推送）
@@ -177,6 +238,11 @@ jobs:
 
           # 方式十一：Server酱3
           SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
+
+          # 方式十二：Slack
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
           # ==========================================
           # 自选股配置
@@ -245,6 +311,17 @@ jobs:
           echo "  MiniMax API Keys: $([ -n "$MINIMAX_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  Brave API Keys: $([ -n "$BRAVE_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  SearXNG Base URLs: $([ -n "$SEARXNG_BASE_URLS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
+          case "${SEARXNG_PUBLIC_INSTANCES_ENABLED,,}" in
+            0|false|no|off)
+              echo "  SearXNG Public Instances: ❌ 已禁用"
+              ;;
+            "")
+              echo "  SearXNG Public Instances: ✅ 默认开启"
+              ;;
+            *)
+              echo "  SearXNG Public Instances: ✅ 已启用"
+              ;;
+          esac
           echo ""
           echo "【通知渠道】"
           echo "  PushPlus: $([ -n "$PUSHPLUS_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
@@ -253,6 +330,7 @@ jobs:
           echo "  Telegram: $([ -n "$TELEGRAM_BOT_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  Discord: $([ -n "$DISCORD_WEBHOOK_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  AstrBot: $([ -n "$ASTRBOT_URL" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
+          echo "  Slack: $(([ -n "$SLACK_WEBHOOK_URL" ] || ([ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ])) && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "=========================================="
           echo ""
           
@@ -267,16 +345,27 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always()
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
             reports/
             logs/
           retention-days: 30
+
+      - name: 本次未运行分析（跳过原因）
+        if: ${{ steps.should_run.outputs.run != 'true' }}
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "⏭️ 已跳过本次分析"
+          echo "=========================================="
+          echo "原因: ${{ steps.should_run.outputs.reason }}"
+          echo "触发方式: ${{ github.event_name }}"
+          echo ""
       
       - name: 显示运行结果
-        if: always()
+        if: ${{ steps.should_run.outputs.run == 'true' }}
         run: |
           echo ""
           echo "=========================================="
