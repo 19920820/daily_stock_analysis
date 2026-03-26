@@ -414,9 +414,10 @@ Edit `.github/workflows/daily_analysis.yml`:
 
 ```yaml
 schedule:
-  # UTC time, Beijing time = UTC + 8
-  - cron: '0 10 * * 1-5'   # Monday to Friday 18:00 (Beijing Time)
+  - cron: '*/30 * * * *'   # UTC, every 30 minutes
 ```
+
+On scheduled runs, analysis executes only if `stock_list.txt` had a Git commit within the last **30 minutes**; runs are skipped between **02:00–06:00 Beijing time**. Manual `workflow_dispatch` is not subject to these rules.
 
 Common time reference:
 

@@ -438,13 +438,14 @@ python main.py --workers 5            # 指定并发数
 
 ### GitHub Actions 定时
 
-编辑 `.github/workflows/daily_analysis.yml`:
+编辑 `.github/workflows/daily_analysis.yml`：
 
 ```yaml
 schedule:
-  # UTC 时间，北京时间 = UTC + 8
-  - cron: '0 10 * * 1-5'   # 周一到周五 18:00（北京时间）
+  - cron: '*/30 * * * *'   # UTC，每 30 分钟触发一次
 ```
+
+定时触发时，仅当 `stock_list.txt` 在最近 **30 分钟**内有 Git 提交更新才会执行分析；北京时间 **02:00–06:00** 不自动运行。手动触发不受此限制。
 
 常用时间对照：
 

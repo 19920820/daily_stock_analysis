@@ -397,18 +397,19 @@ git push
 
 ### Schedule Details
 
-Default configuration: **Monday to Friday, 18:00 Beijing Time** auto-execution
+Default configuration: Workflow runs on a **`*/30 * * * *`** (UTC) schedule; analysis runs only if `stock_list.txt` had a Git commit within the last **30 minutes**; runs are skipped during **02:00–06:00 Beijing time**. Manual `workflow_dispatch` is not subject to these rules.
 
-Modify time: Edit cron expression in `.github/workflows/daily_analysis.yml`:
+To change frequency or the freshness window, edit `schedule` and the seconds threshold in `.github/workflows/daily_analysis.yml` (default **`1800`** = 30 minutes).
 
 ```yaml
 schedule:
-  - cron: '0 10 * * 1-5'  # UTC time, +8 = Beijing time
+  - cron: '*/30 * * * *'  # UTC, every 30 minutes
 ```
 
 Common cron examples:
 | Expression | Description |
 |--------|------|
+| `'*/30 * * * *'` | Every 30 minutes (UTC), matches default 30-minute freshness window |
 | `'0 10 * * 1-5'` | Mon-Fri 18:00 (Beijing) |
 | `'30 7 * * 1-5'` | Mon-Fri 15:30 (Beijing) |
 | `'0 10 * * *'` | Daily 18:00 (Beijing) |

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- GitHub Actions「每日股票分析」Workflow（`daily_analysis.yml`）固定 `TRADING_DAY_CHECK_ENABLED=false`，不再在 Actions 内依据交易日历跳过执行；保留可选输入 `force_run`（已废弃、忽略）以兼容仍会传入该字段的 API 客户端
+- GitHub Actions「每日股票分析」Workflow（`daily_analysis.yml`）：定时触发为 **UTC 每 30 分钟**；仅当 `stock_list.txt` 在最近 **30 分钟**内有 Git 提交更新时执行分析（`1800` 秒窗口）；`reason` 为 `updated_within_30m` / `not_updated_within_30m`；固定 `TRADING_DAY_CHECK_ENABLED=false`，不再在 Actions 内依据交易日历跳过执行；保留可选输入 `force_run`（已废弃、忽略）以兼容仍会传入该字段的 API 客户端
 
 ## [3.6.0] - 2026-03-14
 

@@ -228,7 +228,7 @@
 
 #### 完成
 
-默认每个**工作日 18:00（北京时间）**自动执行，也可手动触发。`daily_analysis` Workflow 在 Actions 内**固定**设置 `TRADING_DAY_CHECK_ENABLED=false`，定时与手动触发均**不做**非交易日跳过（与仓库 Secrets/Variables 中的同名变量无关）。
+默认按 **UTC 每 30 分钟** 定时检查；仅当 `stock_list.txt` 在最近 **30 分钟内**有 Git 提交更新时才会执行分析；北京时间 **02:00–06:00** 不自动运行。也可手动触发（手动触发不受上述时间与更新窗口限制）。`daily_analysis` Workflow 在 Actions 内**固定**设置 `TRADING_DAY_CHECK_ENABLED=false`，定时与手动触发均**不做**非交易日跳过（与仓库 Secrets/Variables 中的同名变量无关）。
 
 本地运行、Docker 等仍默认启用交易日检查（`TRADING_DAY_CHECK_ENABLED` 默认 `true`）；若需跳过，可在 `.env` 中设为 `false` 或使用 `python main.py --force-run`。
 
