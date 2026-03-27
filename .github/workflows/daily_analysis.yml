@@ -57,15 +57,6 @@ jobs:
             exit 0
           fi
 
-          # 定时触发：北京时间 02:00–06:00 不自动运行
-          bj_hour="$(TZ='Asia/Shanghai' date +%H)"
-          if [ "${bj_hour}" -ge 2 ] && [ "${bj_hour}" -lt 6 ]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "reason=quiet_hours_bj_02_06" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 定时触发：当前北京时间 ${bj_hour}:xx（02:00–06:00），跳过本次分析"
-            exit 0
-          fi
-
           FILE="stock_list.txt"
           if [ ! -f "$FILE" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
